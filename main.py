@@ -1,11 +1,8 @@
-"""news-image-20261122 entrypoint.
+"""Copy entry.png next to this script into the output folder.
 
-Copies the entry image (entry.png, stored next to this file) to the
-output directory the grader expects: /output, or $MAKEFUN_OUTPUT_DIR
-for local runs. After copying, it checks the copy byte-for-byte
-against the source with SHA-256 so a truncated write is caught.
-
-Stdlib only, no network access.
+The output folder comes from MAKEFUN_OUTPUT_DIR, falling back to
+/output when that variable is not set. The copy is verified
+byte-for-byte by comparing SHA-256 digests of source and target.
 """
 
 import hashlib
@@ -13,45 +10,40 @@ import os
 import shutil
 import sys
 
-CHUNK = 1 << 20
 
-
-def digest(path):
-    """SHA-256 hex digest of a file, streamed in 1 MiB chunks."""
-    h = hashlib.sha256()
+def sha256_of(path):
+    digest = hashlib.sha256()
     with open(path, "rb") as handle:
-        while True:
-            block = handle.read(CHUNK)
-            if not block:
-                break
-            h.update(block)
-    return h.hexdigest()
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main():
-    base = os.path.dirname(os.path.abspath(__file__))
-    source = os.path.join(base, "entry.png")
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
-    os.makedirs(out_dir, exist_ok=True)
-    target = os.path.join(out_dir, "entry.png")
+    here = os.path.dirname(os.path.abspath(__file__))
+    source = os.path.join(here, "entry.png")
 
     if not os.path.isfile(source):
-        print(f"error: entry image not found: {source}", file=sys.stderr)
+        print("error: entry.png not found next to main.py", file=sys.stderr)
         return 1
 
+    output_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    target = os.path.join(output_dir, "entry.png")
     shutil.copyfile(source, target)
 
-    source_digest = digest(source)
-    target_digest = digest(target)
-    if source_digest != target_digest:
-        print("self-check FAILED: copy differs from source", file=sys.stderr)
-        return 1
     if os.path.getsize(source) != os.path.getsize(target):
-        print("self-check FAILED: size mismatch after copy", file=sys.stderr)
+        print("error: copied file size does not match entry.png", file=sys.stderr)
         return 1
-    print(f"entry.png written to {target} (sha256 {target_digest})")
+
+    if sha256_of(source) != sha256_of(target):
+        print("error: copied file does not match entry.png", file=sys.stderr)
+        return 1
+
+    print(f"copied entry.png to {target}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
